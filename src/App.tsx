@@ -1,35 +1,34 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import CampaignApp from './pages/CampaignApp'
 import './App.css'
+import {
+  WalletProvider,
+  ConnectionProvider,
+} from "@solana/wallet-adapter-react";
+import {
+  PhantomWalletAdapter,
+  SolflareWalletAdapter,
+} from "@solana/wallet-adapter-wallets";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import "@solana/wallet-adapter-react-ui/styles.css";
+import { clusterApiUrl } from "@solana/web3.js";
+import {
+  WalletAdapterNetwork,
+} from "@solana/wallet-adapter-base";
+export default function App() {
+  const wallets = [
+    new PhantomWalletAdapter(), 
+    new SolflareWalletAdapter()
+  ];
 
-function App() {
-  const [count, setCount] = useState(0)
+  const network = WalletAdapterNetwork.Devnet;
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <ConnectionProvider endpoint={clusterApiUrl(network)}>
+      <WalletProvider wallets={wallets} autoConnect>
+        <WalletModalProvider>
+          <CampaignApp />
+        </WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
+  );
 }
-
-export default App
