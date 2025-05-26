@@ -18,7 +18,9 @@ const wallets = [
   new AlphaWalletAdapter(),
 ];
 
-const endpoint = 'https://devnet.helius-rpc.com/?api-key=571c6251-da4f-4409-b1ed-25ca0eff2d17';
+const API_KEY = import.meta.env.VITE_API_KEY
+
+const endpoint = `https://devnet.helius-rpc.com/?api-key=${API_KEY}`;
 
 const Wallet = () => {
   return (
