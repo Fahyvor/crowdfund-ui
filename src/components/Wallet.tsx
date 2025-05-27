@@ -26,8 +26,7 @@ const Wallet = () => {
   return (
     <div>
       <ConnectionProvider endpoint={endpoint}>
-
-      <WalletProvider wallets={wallets} autoConnect>
+        <WalletProvider wallets={wallets} autoConnect>
               <WalletModalProvider>
                   <WalletMultiButton />
               </WalletModalProvider>

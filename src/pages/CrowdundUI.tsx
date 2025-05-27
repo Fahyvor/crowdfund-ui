@@ -1,5 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Target, Users, Clock, Plus, TrendingUp } from 'lucide-react';
+import { ToastContainer, toast } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { PublicKey } from "@solana/web3.js";
+import idl from "../../crowdfunding.json";
+import { AnchorProvider, Program } from "@project-serum/anchor";
+import type { Idl } from "@project-serum/anchor";
+import { Crowdfunding } from '../../crowdfunding'
+import * as anchor from '@coral-xyz/anchor';
 
 interface Campaign {
   id: string;
@@ -26,9 +35,49 @@ export default function CrowdfundingUI() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [donations, setDonations] = useState<Donation[]>([]);
   const [activeTab, setActiveTab] = useState<'browse' | 'create' | 'my-campaigns' | 'my-donations'>('browse');
-  const [walletConnected] = useState(false);
-  const [userAddress] = useState('');
-  // const [loading, setLoading] = useState(false);
+  const { publicKey, connected } = useWallet();
+  const [userAddress, setUserAddress] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (connected && publicKey) {
+      setUserAddress(publicKey.toBase58());
+    }
+  }, [connected, publicKey]);
+
+  function convertToIdl(crowdfunding: typeof Crowdfunding) {
+    return {
+      version: crowdfunding.metadata.version,
+      name: crowdfunding.metadata.name,
+      instructions: crowdfunding.instructions.map((ix) => ({
+        ...ix,
+        accounts: ix.accounts.map((acc) => {
+          const { writable, signer, ...rest } = acc;
+          return {
+            ...rest,
+            isMut: writable ?? false,
+            isSigner: signer ?? false,
+          };
+        }),
+      })),
+      accounts: crowdfunding.accounts.map((acc) => ({
+        name: acc.name,
+        type: {
+          kind: 'struct',
+          fields: []
+        }
+      })),
+      errors: crowdfunding.errors,
+      types: crowdfunding.types,
+    } as Idl;
+  }
+  
+  const crowdfundingIdl = convertToIdl(Crowdfunding); 
+  
+
+  const PROGRAM_ID = new PublicKey(idl.address);
+  const provider = AnchorProvider.local();
+  const program = new Program(crowdfundingIdl as Idl, PROGRAM_ID, provider);
 
   // Mock data for demonstration
   useEffect(() => {
@@ -77,32 +126,57 @@ export default function CrowdfundingUI() {
     deadline: ''
   });
 
-  // const connectWallet = () => {
-  //   setWalletConnected(true);
-  //   setUserAddress('7x9WiQxQxG...');
-  // };
-
-  const createCampaign = () => {
-    if (!newCampaign.title || !newCampaign.description || !newCampaign.goal || !newCampaign.deadline) {
-      alert('Please fill in all fields');
+  const createCampaign = async () => {
+    if (!connected) {
+      toast.error("Please connect your wallet first");
       return;
     }
 
-    const campaign: Campaign = {
-      id: Date.now().toString(),
-      owner: userAddress,
-      title: newCampaign.title,
-      description: newCampaign.description,
-      goal: parseFloat(newCampaign.goal) * 1000000, // Convert to lamports
-      deadline: new Date(newCampaign.deadline).getTime(),
-      raisedAmount: 0,
-      isActive: true,
-      isGoalMet: false
-    };
+    if (!newCampaign.title || !newCampaign.description || !newCampaign.goal || !newCampaign.deadline) {
+      toast.error("Please fill in all fields")
+      return;
+    }
 
-    setCampaigns([...campaigns, campaign]);
-    setNewCampaign({ title: '', description: '', goal: '', deadline: '' });
-    setActiveTab('browse');
+    setIsLoading(true)
+
+    try {
+      const campaignKeypair = anchor.web3.Keypair.generate();
+
+      await program.methods
+      .initialize(
+        newCampaign.title,
+        newCampaign.description,
+        new anchor.BN(newCampaign.goal),
+        new anchor.BN(Math.floor(new Date(newCampaign.deadline).getTime() / 1000))
+      )
+      .accounts({
+        campaign: campaignKeypair.publicKey,
+        owner: provider.wallet.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([campaignKeypair])
+      .rpc();
+
+      const campaign: Campaign = {
+        id: Date.now().toString(),
+        owner: userAddress,
+        title: newCampaign.title,
+        description: newCampaign.description,
+        goal: parseFloat(newCampaign.goal) * 1000000, // Convert to lamports
+        deadline: new Date(newCampaign.deadline).getTime(),
+        raisedAmount: 0,
+        isActive: true,
+        isGoalMet: false
+      };
+  
+      setCampaigns([...campaigns, campaign]);
+      setNewCampaign({ title: '', description: '', goal: '', deadline: '' });
+      setActiveTab('browse');
+    } catch (error) {
+      toast.error("Something went wrong")
+      console.log(error)
+    }
+
   };
 
   const donate = (campaignId: string, amount: number) => {
@@ -177,39 +251,7 @@ export default function CrowdfundingUI() {
 
   return (
     <div className="min-h-screen font-montserrat bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
-      {/* Header */}
-      {/* <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl flex items-center justify-center">
-                <Target className="w-6 h-6 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                CrowdFund
-              </h1>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              {walletConnected ? (
-                <div className="flex items-center space-x-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span className="text-sm font-medium text-green-700">{userAddress}</span>
-                </div>
-              ) : (
-                <button
-                  onClick={connectWallet}
-                  className="flex items-center space-x-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-lg"
-                >
-                  <Wallet className="w-4 h-4" />
-                  <span>Connect Wallet</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </header> */}
-
+      <ToastContainer />
       {/* Navigation */}
       <nav className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex space-x-1 bg-white/60 backdrop-blur-sm p-1 rounded-xl border border-gray-200">
@@ -295,7 +337,7 @@ export default function CrowdfundingUI() {
                     </div>
                   </div>
                   
-                  {walletConnected && campaign.isActive && (
+                  {connected && campaign.isActive && (
                     <div className="flex space-x-2">
                       <button
                         onClick={() => donate(campaign.id, 1)}
@@ -329,7 +371,7 @@ export default function CrowdfundingUI() {
                     type="text"
                     value={newCampaign.title}
                     onChange={(e) => setNewCampaign({...newCampaign, title: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
                     placeholder="Enter campaign title..."
                   />
                 </div>
@@ -340,7 +382,7 @@ export default function CrowdfundingUI() {
                     value={newCampaign.description}
                     onChange={(e) => setNewCampaign({...newCampaign, description: e.target.value})}
                     rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
                     placeholder="Describe your campaign..."
                   />
                 </div>
@@ -351,7 +393,7 @@ export default function CrowdfundingUI() {
                     type="number"
                     value={newCampaign.goal}
                     onChange={(e) => setNewCampaign({...newCampaign, goal: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
                     placeholder="0.00"
                     min="0"
                     step="0.01"
@@ -364,17 +406,17 @@ export default function CrowdfundingUI() {
                     type="date"
                     value={newCampaign.deadline}
                     onChange={(e) => setNewCampaign({...newCampaign, deadline: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outine-none"
                     min={new Date().toISOString().split('T')[0]}
                   />
                 </div>
                 
                 <button
                   onClick={createCampaign}
-                  disabled={!walletConnected}
+                  disabled={!isLoading}
                   className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 px-6 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {walletConnected ? 'Create Campaign' : 'Connect Wallet First'}
+                  {connected ? 'Create Campaign' : 'Connect Wallet First'}
                 </button>
               </div>
             </div>
