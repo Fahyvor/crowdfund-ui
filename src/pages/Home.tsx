@@ -16,7 +16,7 @@ const Home:React.FC = () => {
                 <Target className="w-6 h-6 text-white" />
               </div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                CrowdFund
+                CrowdFunding Dapp
               </h1>
             </div>
             

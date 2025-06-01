@@ -306,6 +306,10 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
           }
         ]
       }

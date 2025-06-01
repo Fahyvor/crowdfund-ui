@@ -1,236 +1,127 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Target, Users, Clock, Plus, TrendingUp } from 'lucide-react';
-import { ToastContainer, toast } from 'react-toastify'
+import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey } from "@solana/web3.js";
-import idl from "../../crowdfunding.json";
-import { AnchorProvider, Program } from "@project-serum/anchor";
-import type { Idl } from "@project-serum/anchor";
-import { Crowdfunding } from '../../crowdfunding'
-import * as anchor from '@coral-xyz/anchor';
-
-interface Campaign {
-  id: string;
-  owner: string;
-  title: string;
-  description: string;
-  goal: number;
-  deadline: number;
-  raisedAmount: number;
-  isActive: boolean;
-  isGoalMet: boolean;
-}
+import type { WalletContextState } from '@solana/wallet-adapter-react';
+import { Wallet } from '@project-serum/anchor';
+import MyCampaigns from '../components/MyCampaigns';
+import MyDonations from '../components/MyDonations';
+import CreateCampaign from '../components/CreateCampaign';
+import { useMockCampaigns } from '../hook/useMockCampaign';
 
 interface Donation {
   id: string;
   donor: string;
   campaignId: string;
-  amount: number;
+  amount: number; // in lamports
   refunded: boolean;
   timestamp: number;
 }
 
 export default function CrowdfundingUI() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const {campaigns, setCampaigns } = useMockCampaigns();
   const [donations, setDonations] = useState<Donation[]>([]);
-  const [activeTab, setActiveTab] = useState<'browse' | 'create' | 'my-campaigns' | 'my-donations'>('browse');
-  const { publicKey, connected } = useWallet();
+  const [activeTab, setActiveTab] = useState<
+    'browse' | 'create' | 'my-campaigns' | 'my-donations'
+  >('browse');
   const [userAddress, setUserAddress] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (connected && publicKey) {
-      setUserAddress(publicKey.toBase58());
+
+  function getWalletAdapterWallet(walletContext: WalletContextState): Wallet {
+    if (
+      !wallet ||
+      // !wallet.connected ||
+      !wallet.publicKey ||
+      !wallet.signTransaction ||
+      !wallet.signAllTransactions ||
+      !walletContext.publicKey ||
+      !walletContext.signTransaction ||
+      !walletContext.signAllTransactions
+    ) {
+      throw new Error('Wallet is not fully connected or missing signing methods.');
     }
-  }, [connected, publicKey]);
 
-  function convertToIdl(crowdfunding: typeof Crowdfunding) {
     return {
-      version: crowdfunding.metadata.version,
-      name: crowdfunding.metadata.name,
-      instructions: crowdfunding.instructions.map((ix) => ({
-        ...ix,
-        accounts: ix.accounts.map((acc) => {
-          const { writable, signer, ...rest } = acc;
-          return {
-            ...rest,
-            isMut: writable ?? false,
-            isSigner: signer ?? false,
-          };
-        }),
-      })),
-      accounts: crowdfunding.accounts.map((acc) => ({
-        name: acc.name,
-        type: {
-          kind: 'struct',
-          fields: []
-        }
-      })),
-      errors: crowdfunding.errors,
-      types: crowdfunding.types,
-    } as Idl;
-  }
-  
-  const crowdfundingIdl = convertToIdl(Crowdfunding); 
-  
+      publicKey: walletContext.publicKey,
+      signTransaction: walletContext.signTransaction,
+      signAllTransactions: walletContext.signAllTransactions,
+      //  payer: walletContext.payer,
+    };
+  } 
 
-  const PROGRAM_ID = new PublicKey(idl.address);
-  const provider = AnchorProvider.local();
-  const program = new Program(crowdfundingIdl as Idl, PROGRAM_ID, provider);
-
-  // Mock data for demonstration
+  const walletContext = useWallet();
+  console.log("Wallet Context", walletContext);
   useEffect(() => {
-    const mockCampaigns: Campaign[] = [
-      {
-        id: '1',
-        owner: 'owner1',
-        title: 'Solar Energy for Rural Schools',
-        description: 'Help bring clean solar energy to rural schools in developing regions. This project will install solar panels and provide sustainable electricity to 5 schools.',
-        goal: 50000,
-        deadline: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days from now
-        raisedAmount: 32000,
-        isActive: true,
-        isGoalMet: false
-      },
-      {
-        id: '2',
-        owner: 'owner2',
-        title: 'Community Garden Initiative',
-        description: 'Create a sustainable community garden that will provide fresh produce for local families and teach children about sustainable farming.',
-        goal: 15000,
-        deadline: Date.now() + 45 * 24 * 60 * 60 * 1000, // 45 days from now
-        raisedAmount: 8500,
-        isActive: true,
-        isGoalMet: false
-      },
-      {
-        id: '3',
-        owner: 'owner3',
-        title: 'Emergency Water Wells',
-        description: 'Drill emergency water wells in drought-affected areas to provide clean drinking water access to communities in need.',
-        goal: 75000,
-        deadline: Date.now() - 5 * 24 * 60 * 60 * 1000, // 5 days ago (ended)
-        raisedAmount: 68000,
-        isActive: false,
-        isGoalMet: false
+      if (walletContext.connected && walletContext.publicKey) {
+          const publicKeyString = walletContext.publicKey.toBase58();
+          setUserAddress(publicKeyString);
+          console.log('Connected wallet public key:', publicKeyString);
+          console.log('Wallet adapter:', walletContext.wallet?.adapter);
+      } else {
+          console.log('Wallet not connected yet');
+          setUserAddress('');
       }
-    ];
-    setCampaigns(mockCampaigns);
-  }, []);
+  }, [walletContext.connected, walletContext.publicKey, walletContext.wallet?.adapter]);
 
-  const [newCampaign, setNewCampaign] = useState({
-    title: '',
-    description: '',
-    goal: '',
-    deadline: ''
-  });
-
-  const createCampaign = async () => {
-    if (!connected) {
-      toast.error("Please connect your wallet first");
-      return;
-    }
-
-    if (!newCampaign.title || !newCampaign.description || !newCampaign.goal || !newCampaign.deadline) {
-      toast.error("Please fill in all fields")
-      return;
-    }
-
-    setIsLoading(true)
-
-    try {
-      const campaignKeypair = anchor.web3.Keypair.generate();
-
-      await program.methods
-      .initialize(
-        newCampaign.title,
-        newCampaign.description,
-        new anchor.BN(newCampaign.goal),
-        new anchor.BN(Math.floor(new Date(newCampaign.deadline).getTime() / 1000))
-      )
-      .accounts({
-        campaign: campaignKeypair.publicKey,
-        owner: provider.wallet.publicKey,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .signers([campaignKeypair])
-      .rpc();
-
-      const campaign: Campaign = {
-        id: Date.now().toString(),
-        owner: userAddress,
-        title: newCampaign.title,
-        description: newCampaign.description,
-        goal: parseFloat(newCampaign.goal) * 1000000, // Convert to lamports
-        deadline: new Date(newCampaign.deadline).getTime(),
-        raisedAmount: 0,
-        isActive: true,
-        isGoalMet: false
-      };
-  
-      setCampaigns([...campaigns, campaign]);
-      setNewCampaign({ title: '', description: '', goal: '', deadline: '' });
-      setActiveTab('browse');
-    } catch (error) {
-      toast.error("Something went wrong")
-      console.log(error)
-    }
-
-  };
+  // Defensive check to only get wallet if connected
+  let wallet: Wallet | null = null;
+  try {
+    wallet = getWalletAdapterWallet(walletContext);
+  } catch (err) {
+    wallet = null;
+    console.log(err)
+  }
 
   const donate = (campaignId: string, amount: number) => {
-    const campaign = campaigns.find(c => c.id === campaignId);
-    if (!campaign || !campaign.isActive) return;
+    const campaign = campaigns.find((c) => c.id === campaignId);
+    if (!campaign || !campaign.isActive) {
+      toast.error('Cannot donate to this campaign');
+      return;
+    }
 
     const donation: Donation = {
       id: Date.now().toString(),
       donor: userAddress,
       campaignId,
-      amount: amount * 1000000, // Convert to lamports
+      amount: amount * 1_000_000,
       refunded: false,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     setDonations([...donations, donation]);
-    
-    const updatedCampaigns = campaigns.map(c => {
+
+    const updatedCampaigns = campaigns.map((c) => {
       if (c.id === campaignId) {
-        const newRaisedAmount = c.raisedAmount + (amount * 1000000);
+        const newRaisedAmount = c.raisedAmount + amount * 1_000_000;
         return {
           ...c,
           raisedAmount: newRaisedAmount,
-          isGoalMet: newRaisedAmount >= c.goal
+          isGoalMet: newRaisedAmount >= c.goal,
         };
       }
       return c;
     });
+
     setCampaigns(updatedCampaigns);
+    toast.success(`Donated ${amount.toFixed(2)} SOL`);
   };
 
-  const withdraw = (campaignId: string) => {
-    const campaign = campaigns.find(c => c.id === campaignId);
-    if (!campaign || campaign.isActive || !campaign.isGoalMet || campaign.owner !== userAddress) return;
-    
-    alert(`Withdrew ${(campaign.raisedAmount / 1000000).toFixed(2)} SOL from ${campaign.title}`);
-  };
+  // Filter campaigns by tab
+  // const filteredCampaigns = campaigns.filter((campaign) => {
+  //   switch (activeTab) {
+  //     case 'browse':
+  //       return campaign.isActive;
+  //     case 'my-campaigns':
+  //       return campaign.owner === userAddress;
+  //     case 'my-donations':
+  //       return donations.some((d) => d.campaignId === campaign.id && d.donor === userAddress);
+  //     default:
+  //       return true;
+  //   }
+  // });
 
-  const refund = (donationId: string) => {
-    const donation = donations.find(d => d.id === donationId);
-    if (!donation || donation.refunded) return;
-
-    const campaign = campaigns.find(c => c.id === donation.campaignId);
-    if (!campaign || campaign.isActive || campaign.isGoalMet) return;
-
-    const updatedDonations = donations.map(d => 
-      d.id === donationId ? { ...d, refunded: true } : d
-    );
-    setDonations(updatedDonations);
-    
-    alert(`Refunded ${(donation.amount / 1000000).toFixed(2)} SOL`);
-  };
-
-  const formatDate = (timestamp: number) => {
+   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString();
   };
 
@@ -249,8 +140,10 @@ export default function CrowdfundingUI() {
     return Math.ceil(diff / (24 * 60 * 60 * 1000));
   };
 
+
+  // JSX render
   return (
-    <div className="min-h-screen font-montserrat bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
+     <div className="min-h-screen font-montserrat bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
       <ToastContainer />
       {/* Navigation */}
       <nav className="max-w-7xl mx-auto px-4 py-6">
@@ -337,7 +230,7 @@ export default function CrowdfundingUI() {
                     </div>
                   </div>
                   
-                  {connected && campaign.isActive && (
+                  {wallet && campaign.isActive && (
                     <div className="flex space-x-2">
                       <button
                         onClick={() => donate(campaign.id, 1)}
@@ -360,145 +253,61 @@ export default function CrowdfundingUI() {
         )}
 
         {activeTab === 'create' && (
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-gray-200 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Create New Campaign</h2>
-              
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Campaign Title</label>
-                  <input
-                    type="text"
-                    value={newCampaign.title}
-                    onChange={(e) => setNewCampaign({...newCampaign, title: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                    placeholder="Enter campaign title..."
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                  <textarea
-                    value={newCampaign.description}
-                    onChange={(e) => setNewCampaign({...newCampaign, description: e.target.value})}
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                    placeholder="Describe your campaign..."
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Funding Goal (SOL)</label>
-                  <input
-                    type="number"
-                    value={newCampaign.goal}
-                    onChange={(e) => setNewCampaign({...newCampaign, goal: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Campaign Deadline</label>
-                  <input
-                    type="date"
-                    value={newCampaign.deadline}
-                    onChange={(e) => setNewCampaign({...newCampaign, deadline: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outine-none"
-                    min={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-                
-                <button
-                  onClick={createCampaign}
-                  disabled={!isLoading}
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 px-6 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {connected ? 'Create Campaign' : 'Connect Wallet First'}
-                </button>
-              </div>
-            </div>
-          </div>
+          <CreateCampaign />
         )}
 
         {activeTab === 'my-campaigns' && (
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">My Campaigns</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {campaigns.filter(c => c.owner === userAddress).map(campaign => (
-                <div key={campaign.id} className="bg-white/70 backdrop-blur-sm rounded-xl border border-gray-200 p-6">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">{campaign.title}</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Raised:</span>
-                      <span className="font-bold">{formatSOL(campaign.raisedAmount)} SOL</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Goal:</span>
-                      <span className="font-bold">{formatSOL(campaign.goal)} SOL</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Status:</span>
-                      <span className={`font-medium ${
-                        campaign.isActive ? 'text-green-600' : campaign.isGoalMet ? 'text-blue-600' : 'text-red-600'
-                      }`}>
-                        {campaign.isActive ? 'Active' : campaign.isGoalMet ? 'Goal Met' : 'Ended'}
-                      </span>
-                    </div>
-                    {!campaign.isActive && campaign.isGoalMet && (
-                      <button
-                        onClick={() => withdraw(campaign.id)}
-                        className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors"
-                      >
-                        Withdraw Funds
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <MyCampaigns />
         )}
 
         {activeTab === 'my-donations' && (
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">My Donations</h2>
-            <div className="space-y-4">
-              {donations.filter(d => d.donor === userAddress).map(donation => {
-                const campaign = campaigns.find(c => c.id === donation.campaignId);
-                return (
-                  <div key={donation.id} className="bg-white/70 backdrop-blur-sm rounded-xl border border-gray-200 p-6">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-bold text-lg">{campaign?.title}</h3>
-                        <p className="text-gray-600">Donated {formatSOL(donation.amount)} SOL</p>
-                        <p className="text-sm text-gray-500">on {formatDate(donation.timestamp)}</p>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        {donation.refunded && (
-                          <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
-                            Refunded
-                          </span>
-                        )}
-                        {!donation.refunded && campaign && !campaign.isActive && !campaign.isGoalMet && (
-                          <button
-                            onClick={() => refund(donation.id)}
-                            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
-                          >
-                            Request Refund
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <MyDonations />
         )}
       </main>
+    </div>
+  );
+}
+
+interface DonateButtonProps {
+  campaignId: string;
+  onDonate: (campaignId: string, amount: number) => void;
+}
+
+function DonateButton({ campaignId, onDonate }: DonateButtonProps) {
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleDonate = () => {
+    const num = parseFloat(amount);
+    if (isNaN(num) || num <= 0) {
+      toast.error('Please enter a valid donation amount');
+      return;
+    }
+
+    setLoading(true);
+    onDonate(campaignId, num);
+    setAmount('');
+    setLoading(false);
+  };
+
+  return (
+    <div className="flex space-x-2">
+      <input
+        type="number"
+        min="0.01"
+        step="0.01"
+        className="input input-bordered flex-grow"
+        placeholder="Amount (SOL)"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+      />
+      <button
+        className="btn btn-primary"
+        onClick={handleDonate}
+        disabled={loading}
+      >
+        {loading ? 'Donating...' : 'Donate'}
+      </button>
     </div>
   );
 }
