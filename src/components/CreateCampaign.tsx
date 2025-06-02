@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey, Connection } from '@solana/web3.js';
-import idl from '../../crowdfunding.json';
+import idl from '../../crowdfunding.json' assert { type: "json"};
+import type { Idl } from '@project-serum/anchor';
 import { AnchorProvider, Program } from '@project-serum/anchor';
-import type { Idl, Wallet } from '@project-serum/anchor';
+import type { Wallet } from '@project-serum/anchor';
 import { Crowdfunding } from '../../crowdfunding';
 import * as anchor from '@coral-xyz/anchor';
 import { useMockCampaigns } from '../hook/useMockCampaign';
@@ -35,11 +36,12 @@ const CreateCampaign = () => {
     const walletContext = useWallet();
     const wallet = walletContext?.publicKey && walletContext.signTransaction && walletContext.signAllTransactions
   ? {
-      publicKey: walletContext.publicKey,
+      publicKey: new PublicKey(walletContext.publicKey.toBase58()), // Force correct type
       signTransaction: walletContext.signTransaction,
       signAllTransactions: walletContext.signAllTransactions,
     } as Wallet
   : null;
+
 
 
     useEffect(() => {
@@ -82,17 +84,26 @@ const CreateCampaign = () => {
     }
     
     const crowdfundingIdl = convertToIdl(Crowdfunding)
+    const { address, metadata, ...cleanIdl } = idl;
+    // const { address, ...cleanIdl } = mockIdl;
+    console.log('Program address:', address);
+    console.log('Program metadata:', metadata);
 
     const connection = new Connection('https://api.devnet.solana.com');
 
-      const PROGRAM_ID = new PublicKey(idl.address);
+      const PROGRAM_ID = new PublicKey(address);
         const provider = wallet
           ? new AnchorProvider(connection, wallet, { commitment: 'processed' })
           : null;
       
-        const program = provider
-          ? new Program(crowdfundingIdl as Idl, PROGRAM_ID, provider)
-          : null;
+        // const program = provider
+        //   ? new Program(crowdfundingIdl as Idl, PROGRAM_ID, provider)
+        //   : null;
+
+        console.log(cleanIdl)
+
+      const program = provider ? new Program(crowdfundingIdl as Idl, PROGRAM_ID, provider) : undefined;
+      console.log("Program", program)
 
     const createCampaign = async () => {
         if (!userAddress || !program) {

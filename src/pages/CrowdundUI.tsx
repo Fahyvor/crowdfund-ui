@@ -4,7 +4,12 @@ import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useWallet } from '@solana/wallet-adapter-react';
 import type { WalletContextState } from '@solana/wallet-adapter-react';
-import { Wallet } from '@project-serum/anchor';
+// Remove the NodeWallet import and use a custom interface instead
+interface WalletInterface {
+  publicKey: any;
+  signTransaction: any;
+  signAllTransactions: any;
+}
 import MyCampaigns from '../components/MyCampaigns';
 import MyDonations from '../components/MyDonations';
 import CreateCampaign from '../components/CreateCampaign';
@@ -27,31 +32,25 @@ export default function CrowdfundingUI() {
   >('browse');
   const [userAddress, setUserAddress] = useState('');
 
-
-  function getWalletAdapterWallet(walletContext: WalletContextState): Wallet {
+  function getWalletAdapterWallet(walletContext: WalletContextState): WalletInterface | null {
     if (
-      !wallet ||
-      // !wallet.connected ||
-      !wallet.publicKey ||
-      !wallet.signTransaction ||
-      !wallet.signAllTransactions ||
       !walletContext.publicKey ||
       !walletContext.signTransaction ||
       !walletContext.signAllTransactions
     ) {
-      throw new Error('Wallet is not fully connected or missing signing methods.');
+      return null;
     }
 
     return {
       publicKey: walletContext.publicKey,
       signTransaction: walletContext.signTransaction,
       signAllTransactions: walletContext.signAllTransactions,
-      //  payer: walletContext.payer,
     };
-  } 
+  }
 
   const walletContext = useWallet();
   console.log("Wallet Context", walletContext);
+  
   useEffect(() => {
       if (walletContext.connected && walletContext.publicKey) {
           const publicKeyString = walletContext.publicKey.toBase58();
@@ -64,16 +63,15 @@ export default function CrowdfundingUI() {
       }
   }, [walletContext.connected, walletContext.publicKey, walletContext.wallet?.adapter]);
 
-  // Defensive check to only get wallet if connected
-  let wallet: Wallet | null = null;
-  try {
-    wallet = getWalletAdapterWallet(walletContext);
-  } catch (err) {
-    wallet = null;
-    console.log(err)
-  }
+  // Get wallet instance
+  const wallet = getWalletAdapterWallet(walletContext);
 
   const donate = (campaignId: string, amount: number) => {
+    if (!wallet) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
     const campaign = campaigns.find((c) => c.id === campaignId);
     if (!campaign || !campaign.isActive) {
       toast.error('Cannot donate to this campaign');
@@ -107,20 +105,6 @@ export default function CrowdfundingUI() {
     toast.success(`Donated ${amount.toFixed(2)} SOL`);
   };
 
-  // Filter campaigns by tab
-  // const filteredCampaigns = campaigns.filter((campaign) => {
-  //   switch (activeTab) {
-  //     case 'browse':
-  //       return campaign.isActive;
-  //     case 'my-campaigns':
-  //       return campaign.owner === userAddress;
-  //     case 'my-donations':
-  //       return donations.some((d) => d.campaignId === campaign.id && d.donor === userAddress);
-  //     default:
-  //       return true;
-  //   }
-  // });
-
    const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString();
   };
@@ -139,7 +123,6 @@ export default function CrowdfundingUI() {
     if (diff <= 0) return 0;
     return Math.ceil(diff / (24 * 60 * 60 * 1000));
   };
-
 
   // JSX render
   return (
@@ -264,50 +247,6 @@ export default function CrowdfundingUI() {
           <MyDonations />
         )}
       </main>
-    </div>
-  );
-}
-
-interface DonateButtonProps {
-  campaignId: string;
-  onDonate: (campaignId: string, amount: number) => void;
-}
-
-function DonateButton({ campaignId, onDonate }: DonateButtonProps) {
-  const [amount, setAmount] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleDonate = () => {
-    const num = parseFloat(amount);
-    if (isNaN(num) || num <= 0) {
-      toast.error('Please enter a valid donation amount');
-      return;
-    }
-
-    setLoading(true);
-    onDonate(campaignId, num);
-    setAmount('');
-    setLoading(false);
-  };
-
-  return (
-    <div className="flex space-x-2">
-      <input
-        type="number"
-        min="0.01"
-        step="0.01"
-        className="input input-bordered flex-grow"
-        placeholder="Amount (SOL)"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-      />
-      <button
-        className="btn btn-primary"
-        onClick={handleDonate}
-        disabled={loading}
-      >
-        {loading ? 'Donating...' : 'Donate'}
-      </button>
     </div>
   );
 }
